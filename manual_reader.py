@@ -20,7 +20,14 @@ import sys
 import urllib.request
 
 import gemini_client
-from anthropic_client import claude
+if os.environ.get("ANTHROPIC_API_KEY"):
+    from anthropic_client import claude
+else:                                     # free-only copy: no Claude key, so no paid backup
+    class _NoClaude:
+        spent_usd = 0.0
+        def message(self, *a, **k):
+            raise RuntimeError("no Claude key: free-only")
+    claude = _NoClaude()
 from config import MODEL_CLASSIFIER
 
 SYSTEM = """You read one page of a vehicle parts catalogue or interchange manual (scanned, so the text can be messy).
