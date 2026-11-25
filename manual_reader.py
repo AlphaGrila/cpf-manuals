@@ -80,7 +80,20 @@ def read_page(text):
     return out, by
 
 
-def read_piece(text):
+def read_piece(text, depth=0):
+    """If the answer comes back cut short (a very dense page), read each half separately."""
+    try:
+        return _read_piece_once(text)
+    except ValueError:
+        if depth >= 2 or len(text) < 1500:
+            raise
+        cut = text.rfind("\n", 0, len(text) // 2) + 1 or len(text) // 2
+        a, by = read_piece(text[:cut], depth + 1)
+        b, by = read_piece(text[cut:], depth + 1)
+        return a + b, by
+
+
+def _read_piece_once(text):
     user = "Page text:\n\n" + text
     raw, by = None, "archive text + gemini"
     if gemini_client.enabled() and not GEMINI_OUT["hit"]:
