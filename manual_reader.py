@@ -190,7 +190,7 @@ def _read_piece_once(text):
 # Factory parts catalogues usually print one part per line: NUMBER, then a DESCRIPTION in capitals
 # ("4573 761   BRACKET, Torque Reaction, Front"). Those lines are read with a pattern for free. A page
 # goes to the AI only when the pattern can't account for most of its part numbers.
-PN = r"(?:[A-Z]{0,4}\d[A-Z0-9]{1,9}(?:[- .][A-Z0-9]{1,6}){0,3})"
+PN = r"(?:[A-Z]{0,4}\d[A-Z0-9]{1,9}(?:-[A-Z]{1,3}\b|[- .][A-Z]{0,3}\d[A-Z0-9]{0,5}){0,3})"   # later parts need a digit, except a Ford-style -A suffix
 LINE = re.compile(r"^\s*(?:\d{1,3}[.)]?\s+)?(" + PN + r")\s+([A-Z][A-Z0-9&/'\-]*(?:[ ,.;:\-]+[A-Z0-9&/'\-().\"=<>]+){0,20})[ .,]*$")
 
 
@@ -204,6 +204,14 @@ def pattern_page(page):
         if not m:
             continue
         pn, desc = m.group(1).strip(), raw[m.start(2):m.end(2)].strip()
+        while True:                     # "3491 621 1" / "5517 4970 1 EN0": quantity and sales codes, not the number
+            q = re.match(r"^(.*\d.*?)\s+(\d{1,2}|AR|[A-Z]{2,3}\d)$", pn.upper())
+            if not (q and len(re.sub(r"[^A-Z0-9]", "", q.group(1))) >= 6):
+                break
+            pn = pn[:len(q.group(1))]
+        desc = re.sub(r"^(?:(?:\d{1,2}|AR|A/R|[A-Z]{2}\d)\s+)+", "", desc)   # quantity / sales codes before the name
+        if re.match(r"(REFER|SEE|USE)\b", desc.upper()):
+            continue
         if not re.search(r"\d", pn) or len(re.sub(r"[^A-Z0-9]", "", pn)) < 5 or not re.search(r"[A-Za-z]{3}", desc):
             continue
         if re.fullmatch(r"(19|20)\d\d", re.sub(r"[^0-9]", "", pn)):
