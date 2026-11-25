@@ -1,0 +1,38 @@
+name: Manuals library - read part lines from free manuals
+
+on:
+  schedule:
+    - cron: '47 8 * * *'      # nightly: up to 50 manuals; pattern reader first, then Gemini; Claude backup capped at $1 a night
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many manuals'
+        required: false
+        default: '5'
+      pages:
+        description: 'Most parts-heavy pages to read per manual'
+        required: false
+        default: '40'
+      dry:
+        description: 'Report only, save nothing (yes/no)'
+        required: false
+        default: 'yes'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MR_LIMIT: ${{ github.event.inputs.limit || '50' }}
+          MR_PAGES: ${{ github.event.inputs.pages || '30' }}
+          MR_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}
+        run: python manual_reader.py 2>&1 | tee run_output.log
