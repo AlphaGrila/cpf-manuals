@@ -62,7 +62,73 @@ def archive_text(identifier):
     return get(f"https://archive.org/download/{identifier}/{urllib.parse.quote(files[0])}").decode("utf-8", "replace"), meta
 
 
-STATS_P = {"pattern": 0, "ai": 0}
+def archive_rows(identifier, meta, want):
+    """Rebuild each page's rows from the word positions in the Archive's _djvu.xml.
+    The plain text version lists table columns one after another, so a part number and its
+    description end up far apart. Putting words back in rows (same height on the page) fixes that."""
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+    import io
+    files = [f["name"] for f in meta.get("files", []) if f["name"].endswith("_djvu.xml")]
+    if not files:
+        return None
+    raw = get(f"https://archive.org/download/{identifier}/{urllib.parse.quote(files[0])}", cap=150_000_000)
+    pages, n = {}, -1
+    try:
+        for ev, el in ET.iterparse(io.BytesIO(raw), events=("end",)):
+            if el.tag != "OBJECT":
+                continue
+            n += 1
+            if n in want:
+                words = []
+                for w in el.iter("WORD"):
+                    try:
+                        l, b, r, t = (int(x) for x in (w.get("coords") or "").split(",")[:4])
+                    except ValueError:
+                        continue
+                    if (w.text or "").strip():
+                        words.append((l, min(b, t), r, max(b, t), w.text.strip()))
+                pages[n] = rows_text(words)
+            el.clear()
+    except ET.ParseError:
+        return None
+    return pages
+
+
+START_PN = re.compile(r"^[A-Z]{0,4}\d[A-Z0-9\-]{3,}$")
+
+
+def rows_text(words):
+    if not words:
+        return ""
+    hs = sorted(w[3] - w[1] for w in words)
+    h = max(hs[len(hs) // 2], 1)
+    words.sort(key=lambda w: (w[1] + w[3]) / 2)
+    rows, cur, cy = [], [], None
+    for w in words:
+        c = (w[1] + w[3]) / 2
+        if cur and c - cy > 0.55 * h:
+            rows.append(cur)
+            cur = []
+        cur.append(w)
+        cy = sum((x[1] + x[3]) / 2 for x in cur) / len(cur)
+    rows.append(cur)
+    out = []
+    for row in rows:
+        row.sort(key=lambda w: w[0])
+        seg, prev = [], None
+        for w in row:
+            # a wide gap followed by a new part number = the next column of entries: start a new line
+            if prev is not None and w[0] - prev > 3 * h and START_PN.match(w[4].upper()):
+                out.append(" ".join(x[4] for x in seg))
+                seg = []
+            seg.append(w)
+            prev = w[2]
+        out.append(" ".join(x[4] for x in seg))
+    return "\n".join(out)
+
+
+STATS_P = {"pattern": 0, "ai": 0, "rows": 0}
 HAIKU_CAP = float(os.environ.get("MR_HAIKU_USD", "1.00"))   # most Claude may spend in one run
 GEMINI_OUT = {"hit": False}                                 # set once Google's free daily allowance is used up
 
@@ -194,6 +260,16 @@ def main():
         scored = sorted(range(len(pages)), key=lambda i: -len(NUMBERISH.findall(pages[i].upper())))[:max_pages]
         kept, dropped, by = [], 0, ""
         todo_pages = [i for i in sorted(scored) if len(NUMBERISH.findall(pages[i].upper())) >= 5]
+        if todo_pages and not os.environ.get("MR_NO_ROWS"):
+            try:
+                rebuilt = archive_rows(ident, meta, set(todo_pages))
+            except Exception as e:
+                rebuilt, _ = None, print(f"      word positions not available ({str(e)[:60]})")
+            if rebuilt and len(rebuilt) == len(todo_pages):
+                for i in todo_pages:
+                    if rebuilt[i].strip():
+                        pages[i] = rebuilt[i]
+                STATS_P["rows"] += 1
         if os.environ.get("MR_SHOW_PAGE") and todo_pages:          # show raw text so the pattern can be tuned
             for i in todo_pages[:2]:
                 print(f"----- raw page {i + 1} (first 25 lines) -----")
@@ -260,7 +336,7 @@ def main():
         for j in range(0, len(kept), 500):
             db.insert("manual_lines", [{**k, "document_id": doc_id} for k in kept[j:j + 500]])
         db.update("staging_documents", {"validation_status": "passed", "promoted_id": doc_id}, {"id": f"eq.{s['id']}"})
-    print(f"\nPattern reader: {STATS_P['pattern']} pages read free, {STATS_P['ai']} pages needed the AI")
+    print(f"\nPattern reader: {STATS_P['pattern']} pages read free, {STATS_P['ai']} pages needed the AI; rows rebuilt for {STATS_P['rows']} manuals")
     print(f"\n{done} manuals read. Gemini: {gemini_client.summary()}  Claude: ${claude.spent_usd:.2f}")
 
 

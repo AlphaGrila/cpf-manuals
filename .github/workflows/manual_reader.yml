@@ -14,7 +14,7 @@ on:
         required: false
         default: '40'
       dry:
-        description: 'Report only, save nothing (yes/no)'
+        description: 'Report only, save nothing (yes/no; show = no AI, print pages)'
         required: false
         default: 'yes'
 
@@ -35,5 +35,7 @@ jobs:
           MR_HAIKU_USD: '0'          # no paid Claude backup: free Gemini only
           MR_LIMIT: ${{ github.event.inputs.limit || '50' }}
           MR_PAGES: ${{ github.event.inputs.pages || '30' }}
-          MR_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}
+          MR_DRY: ${{ (github.event.inputs.dry == 'yes' || github.event.inputs.dry == 'show') && '1' || '' }}
+          MR_NO_AI: ${{ github.event.inputs.dry == 'show' && '1' || '' }}
+          MR_SHOW_PAGE: ${{ github.event.inputs.dry == 'show' && '1' || '' }}
         run: python manual_reader.py 2>&1 | tee run_output.log
