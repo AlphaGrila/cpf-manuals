@@ -2,7 +2,7 @@ name: Manuals library - read part lines from free manuals
 
 on:
   schedule:
-    - cron: '47 8 * * *'      # nightly: up to 50 manuals; pattern reader first, then Gemini; Claude backup capped at $1 a night
+    - cron: '47 8 * * *'      # nightly: up to 50 manuals; pattern reader first, then Gemini; free only: stops when Google's free daily allowance is used up
   workflow_dispatch:
     inputs:
       limit:
@@ -32,6 +32,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MR_HAIKU_USD: '0'          # no paid Claude backup: free Gemini only
           MR_LIMIT: ${{ github.event.inputs.limit || '50' }}
           MR_PAGES: ${{ github.event.inputs.pages || '30' }}
           MR_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}

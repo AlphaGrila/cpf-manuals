@@ -174,6 +174,11 @@ def main():
         scored = sorted(range(len(pages)), key=lambda i: -len(NUMBERISH.findall(pages[i].upper())))[:max_pages]
         kept, dropped, by = [], 0, ""
         todo_pages = [i for i in sorted(scored) if len(NUMBERISH.findall(pages[i].upper())) >= 5]
+        if os.environ.get("MR_SHOW_PAGE") and todo_pages:          # show raw text so the pattern can be tuned
+            for i in todo_pages[:2]:
+                print(f"----- raw page {i + 1} (first 25 lines) -----")
+                for l in pages[i].splitlines()[:25]:
+                    print("      |" + l[:110])
 
         def one(i):
             lines, share = pattern_page(pages[i])
