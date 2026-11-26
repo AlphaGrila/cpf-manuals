@@ -17,6 +17,8 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import scope as _scope
+SCOPE = _scope.Scope([])      # replaced with the database lists when the run starts
 
 API = "https://archive.org/advancedsearch.php"
 KINDS = [("parts catalogue", r"parts?\s+(catalog|catalogue|book|list|manual|price list)|illustrated parts|master parts"),
@@ -49,6 +51,8 @@ def search(make, rows, parts_only=False):
 
 def main():
     from supabase_client import db
+    global SCOPE
+    SCOPE = _scope.load(db)
     only = [b.strip() for b in os.environ.get("AM_BRANDS", "").split(",") if b.strip()]
     per = int(os.environ.get("AM_PER_MAKE", "40"))
     dry = bool(os.environ.get("AM_DRY"))
@@ -86,7 +90,7 @@ def main():
                 continue
             seen.add(url)
             years = [int(y) for y in re.findall(r"\b(19[0-9]{2}|18[89][0-9]|20[0-2][0-9])\b", title)]
-            cutoff = 2010 if b.get("country_of_origin") == "Japan" else 2000
+            cutoff = SCOPE.cutoff(b, title)
             if years and min(years) > cutoff:
                 continue                       # after the collector cut-off
             rows.append({"title": title[:300], "entry_type": "document", "document_type": kind,
