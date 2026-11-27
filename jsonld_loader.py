@@ -30,12 +30,23 @@ def as_list(x):
     return x if isinstance(x, list) else [x] if x else []
 
 
-def read_product(url):
-    """Fetch one product page; return the item dict or None."""
+SKIP_LINK = re.compile(r"\.(jpe?g|png|gif|webp|svg|pdf|zip|css|js|ico|mp4)(\?|$)|/(cart|checkout|account|login|"
+                       r"my-account|wishlist|compare|search|basket|customer|cdn-cgi)\b|[?&](sort|order|filter|limit|dir)=", re.I)
+
+
+def read_product(url, links=None):
+    """Fetch one page; return the product item dict or None. With links=list, also collect the page's links."""
     try:
         final, page = sp.get(url, 1_500_000)
     except Exception:
         return None
+    if links is not None:
+        links.extend(urllib.parse.urljoin(final, html.unescape(h).split("#")[0])
+                     for h in re.findall(r'href=["\']([^"\']+)', page))
+    return parse(page, final)
+
+
+def parse(page, final):
     for block in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', page, re.S | re.I):
         try:
             data = json.loads(block.strip())
@@ -60,6 +71,8 @@ def read_product(url):
             try:
                 price = float(str(price).replace(",", "")) if price not in (None, "") else None
             except ValueError:
+                price = None
+            if not price or price <= 0:        # never show a $0 price
                 price = None
             avail = str(offers.get("availability") or "").lower()
             img = it.get("image")
@@ -98,19 +111,47 @@ def load(sup, probe, known, sc, stats):
     host = urllib.parse.urlparse(base).netloc.replace("www.", "")
     urls = [u for u in sp.sitemap_urls(base, home) if host in u]
     prods = [u for u in dict.fromkeys(urls) if sp.PRODUCT_URL.search(urllib.parse.urlparse(u).path) and u not in known]
-    todo = prods[:PER_RUN]
     skipped = {"not relevant": 0, "newer car only": 0, "not a product page": 0}
     items = []
+    if len(prods) >= 5:
+        todo = prods[:PER_RUN]
 
-    def one(u):
-        if time.time() > DEADLINE:
-            return None
-        it = read_product(u)
-        time.sleep(0.4)
-        return it
+        def one(u):
+            if time.time() > DEADLINE:
+                return None
+            it = read_product(u)
+            time.sleep(0.4)
+            return it
 
-    with ThreadPoolExecutor(4) as ex:
-        for it in ex.map(one, todo):
+        with ThreadPoolExecutor(4) as ex:
+            found = list(ex.map(one, todo))
+    else:                                  # no usable site map: walk the shop's own links from the home page
+        found, todo, seen, queue = [], [], {final}, [final]
+        while queue and len(todo) < PER_RUN and time.time() <= DEADLINE:
+            batch, queue = queue[:8], queue[8:]
+            outs = []
+
+            def walk(u):
+                ls = []
+                it = read_product(u, ls)
+                time.sleep(0.4)
+                return it, ls
+
+            with ThreadPoolExecutor(4) as ex:
+                outs = list(ex.map(walk, batch))
+            todo += batch
+            for it, ls in outs:
+                if it and it["url"] not in known:
+                    found.append(it)
+                for l in ls:
+                    pu = urllib.parse.urlparse(l)
+                    if pu.netloc.replace("www.", "") == host and l not in seen and not SKIP_LINK.search(l):
+                        seen.add(l)
+                        queue.append(l)
+        prods = todo + queue
+        print(f"  {sup['name']}: no site map list, walked {len(todo)} pages", flush=True)
+    if True:
+        for it in found:
             if not it:
                 skipped["not a product page"] += 1
                 continue
