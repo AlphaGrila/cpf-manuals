@@ -101,7 +101,12 @@ def product_data(html):
                 offers = it.get("offers") or {}
                 if isinstance(offers, list):
                     offers = offers[0] if offers else {}
-                price = offers.get("price") or offers.get("lowPrice") or (offers.get("priceSpecification") or {}).get("price")
+                if not isinstance(offers, dict):
+                    offers = {}
+                ps = offers.get("priceSpecification") or {}
+                if isinstance(ps, list):
+                    ps = ps[0] if ps else {}
+                price = offers.get("price") or offers.get("lowPrice") or (ps.get("price") if isinstance(ps, dict) else None)
                 return True, price not in (None, "", "0", 0)
     if re.search(r'itemtype=["\']https?://schema\.org/Product["\']', html, re.I):
         return True, bool(re.search(r'itemprop=["\']price["\']', html, re.I))
@@ -109,6 +114,15 @@ def product_data(html):
 
 
 def probe(row):
+    try:
+        return _probe(row)
+    except Exception as e:                       # one odd site must never stop the run
+        return {"supplier_id": row["supplier_id"], "site": row.get("site"), "reachable": None, "platform": None,
+                "sitemap_urls": 0, "product_urls": 0, "jsonld_checked": 0, "jsonld_ok": 0, "jsonld_price": 0,
+                "sample_url": None, "notes": f"probe error: {str(e)[:80]}"}
+
+
+def _probe(row):
     site = (row.get("site") or "").strip()
     out = {"supplier_id": row["supplier_id"], "site": site, "reachable": False, "platform": None,
            "sitemap_urls": 0, "product_urls": 0, "jsonld_checked": 0, "jsonld_ok": 0, "jsonld_price": 0,
