@@ -25,7 +25,7 @@ PLATFORMS = [
     ("bigcommerce", r"cdn\d*\.bigcommerce\.com|bigcommerce"),
     ("squarespace", r"static1\.squarespace\.com|squarespace"),
     ("wix", r"wixstatic\.com|wix\.com"),
-    ("magento", r"mage/|magento|/static/version\d+/frontend"),
+    ("magento", r"/mage/|magento|/static/version\d+/frontend|mage-cache"),
     ("prestashop", r"prestashop"),
     ("opencart", r"route=product/|opencart"),
     ("ecwid", r"ecwid"),
