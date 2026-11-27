@@ -1,0 +1,52 @@
+name: Feed loader - Shopify / WooCommerce catalogues (free, no AI)
+# Runs here (public repo, free Actions minutes). Copy of cpf-agents/feed_loader.py - keep the two in sync.
+
+on:
+  schedule:
+    - cron: '37 6 * * *'        # nightly 10:37pm Pacific: next catalogues, smallest first, until time runs out
+  workflow_dispatch:
+    inputs:
+      suppliers:
+        description: 'How many feed suppliers to load'
+        required: false
+        default: '400'
+      only:
+        description: 'Only the site containing this text'
+        required: false
+        default: ''
+      reload:
+        description: 'yes = re-run shops that loaded short'
+        required: false
+        default: 'no'
+      small:
+        description: 'Only catalogues up to this many products, smallest first'
+        required: false
+        default: '100000'
+      dry:
+        description: 'yes = report only, save nothing'
+        required: false
+        default: 'no'
+
+concurrency:
+  group: feed-loader
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Load
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FL_SUPPLIERS: ${{ github.event.inputs.suppliers || '400' }}
+          FL_ONLY: ${{ github.event.inputs.only }}
+          FL_RELOAD: ${{ github.event.inputs.reload == 'yes' && '1' || '' }}
+          FL_SMALL: ${{ github.event.inputs.small || '100000' }}
+          FL_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}
+        run: python feed_loader.py
