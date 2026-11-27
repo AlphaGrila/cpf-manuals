@@ -1,0 +1,36 @@
+name: Free product-data loader - non-feed suppliers (no AI)
+# Step 10b: suppliers whose product pages carry schema.org Product data. Runs after the feed loader each night.
+on:
+  schedule:
+    - cron: '17 13 * * *'       # 5:17am Pacific, after the nightly feed loader
+  workflow_dispatch:
+    inputs:
+      suppliers:
+        description: 'How many readable suppliers'
+        default: '200'
+      per_supplier:
+        description: 'Pages per supplier this run'
+        default: '4000'
+      dry:
+        description: 'yes = report only, save nothing'
+        default: 'no'
+concurrency:
+  group: jsonld-loader
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          JL_SUPPLIERS: ${{ github.event.inputs.suppliers || '200' }}
+          JL_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}
+          JL_MINUTES: '320'
+          JL_PER_SUPPLIER: ${{ github.event.inputs.per_supplier || '4000' }}
+        run: python jsonld_loader.py
