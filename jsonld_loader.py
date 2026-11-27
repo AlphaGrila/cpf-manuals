@@ -74,6 +74,8 @@ def parse(page, final):
                 price = None
             if not price or price <= 0:        # never show a $0 price
                 price = None
+            else:
+                price = round(price, 2)
             avail = str(offers.get("availability") or "").lower()
             img = it.get("image")
             if isinstance(img, list):
@@ -147,9 +149,12 @@ def load(sup, probe, known, sc, stats):
                     pu = urllib.parse.urlparse(l)
                     if pu.netloc.replace("www.", "") == host and l not in seen and not SKIP_LINK.search(l):
                         seen.add(l)
-                        queue.append(l)
+                        if sp.PRODUCT_URL.search(pu.path):
+                            queue.insert(0, l)      # product-looking pages first
+                        else:
+                            queue.append(l)
         prods = todo + queue
-        print(f"  {sup['name']}: no site map list, walked {len(todo)} pages", flush=True)
+        print(f"  {sup['name']}: no site map list, walked {len(todo)} pages, {len(queue)} still to visit", flush=True)
     if True:
         for it in found:
             if not it:
