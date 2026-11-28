@@ -1,0 +1,41 @@
+name: AI page reader - free Gemini only (Option A)
+# Suppliers whose pages have no standard product data. Free key only; stops when the free allowance is used up.
+on:
+  schedule:
+    - cron: '23 16 * * *'       # 8:23am Pacific, after the manual reader has had its share of the free allowance
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: 'AI pages this run'
+        default: '900'
+      per_site:
+        description: 'Pages per supplier this run'
+        default: '150'
+      only:
+        description: 'Only sites containing this text (blank = all)'
+        default: ''
+      dry:
+        description: 'yes = report only, save nothing'
+        default: 'no'
+concurrency:
+  group: ai-reader
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 320
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AR_PAGES: ${{ github.event.inputs.pages || '900' }}
+          AR_PER_SITE: ${{ github.event.inputs.per_site || '150' }}
+          AR_ONLY: ${{ github.event.inputs.only || '' }}
+          AR_DRY: ${{ github.event.inputs.dry == 'yes' && '1' || '' }}
+          AR_MINUTES: '300'
+        run: python ai_reader.py
