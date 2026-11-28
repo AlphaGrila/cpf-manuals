@@ -27,7 +27,7 @@ import gemini_client as gem
 
 DAY_PAGES = int(os.environ.get("AR_PAGES") or 900)          # pages per night (free allowance)
 PER_SITE = int(os.environ.get("AR_PER_SITE") or 150)        # pages per supplier per night, so many suppliers move
-GAP = float(os.environ.get("AR_GAP") or 4.5)                # seconds between AI calls (stay under the per-minute limit)
+GAP = float(os.environ.get("AR_GAP") or 7)                # seconds between AI calls (stay under the per-minute limit)
 DRY = bool(os.environ.get("AR_DRY"))
 ONLY = os.environ.get("AR_ONLY")
 DEADLINE = time.time() + 60 * float(os.environ.get("AR_MINUTES") or 300)
@@ -54,7 +54,8 @@ def page_text(page, final):
     for href, label in re.findall(r'(?is)<a[^>]+href=["\']([^"\'#]+)["\'][^>]*>(.*?)</a>', page):
         u = urllib.parse.urljoin(final, html.unescape(href))
         t = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", label))).strip()
-        if t and len(t) > 3 and sp.PRODUCT_URL.search(urllib.parse.urlparse(u).path):
+        if t and len(t) > 3 and urllib.parse.urlparse(u).netloc == urllib.parse.urlparse(final).netloc \
+                and not re.search(r"(?i)/(cart|checkout|account|login|wishlist|compare)\b", u):
             links.setdefault(u, t[:80])
     title = re.search(r"(?is)<title[^>]*>(.*?)</title>", page)
     img = re.search(r'(?i)<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', page)
@@ -66,7 +67,11 @@ def numbers_in(text):
     return {re.sub(r"[^\d.]", "", n.replace(",", "")) for n in re.findall(r"\d[\d,]*(?:\.\d{1,2})?", text)}
 
 
-def checked(item, text, links, page_url):
+def words(t):
+    return {w for w in re.findall(r"[a-z0-9]+", (t or "").lower()) if len(w) > 2}
+
+
+def checked(item, text, links, page_url, title=""):
     """Apply the accuracy guards; return the cleaned item or None."""
     name = html.unescape(str(item.get("name") or "")).strip()
     if len(name) < 3 or name.split()[0].lower()[:6] not in text.lower():
@@ -84,7 +89,13 @@ def checked(item, text, links, page_url):
     pns = [str(p).strip() for p in (item.get("part_numbers") or []) if str(p).strip()]
     pns = [p for p in pns if p.lower().replace(" ", "") in low][:10]
     link = item.get("link")
-    url = link if link in links else page_url
+    if link in links:
+        url = link
+    else:                                               # no link of its own: only the page's main product may use the page link
+        nw, tw = words(name), words(title)
+        if not nw or len(nw & tw) / len(nw) < 0.5:
+            return None                                 # e.g. "related products" on another product's page
+        url = page_url
     cur = (item.get("currency") or "")[:3].upper() or None
     return {"name": name[:300], "price": price, "currency": cur if price is not None else cur,
             "in_stock": item.get("in_stock") if isinstance(item.get("in_stock"), bool) else None,
@@ -135,10 +146,10 @@ def read_site(probe, sup, known, sc, budget, stats):
         except gem.GeminiUnavailable as e:
             stats["fails"] += 1
             print(f"     AI unavailable ({e})", flush=True)
-            if stats["fails"] >= 3:
+            if stats["fails"] >= 5:
                 stats["stop"] = True                    # free allowance used up: stop, carry on next night
                 print("  Free AI allowance used up for today - stopping; continues next run.", flush=True)
-            time.sleep(30)
+            time.sleep(65)                              # per-minute limit: wait a minute and go on
             continue
         except Exception:
             out = {}
@@ -146,7 +157,7 @@ def read_site(probe, sup, known, sc, budget, stats):
         stats["pages"] += 1
         found = 0
         for it in (out.get("items") or [])[:40] if isinstance(out, dict) else []:
-            c = checked(it, text, links, pfinal) if isinstance(it, dict) else None
+            c = checked(it, text, links, pfinal, title) if isinstance(it, dict) else None
             if not c or c["url"] in known:
                 continue
             blob = f"{c['name']} {c.get('vehicles') or ''}"
